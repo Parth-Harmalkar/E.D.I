@@ -1,0 +1,25 @@
+{
+  "entities": {
+    "person_ayan": {
+      "type": "Person",
+      "properties": {
+        "name": "Ayan"
+      },
+      "created": "2025-11-28T21:11:15.391451",
+      "last_updated": "2025-11-28T21:11:15.391451"
+    }
+  },
+  "relationships": [],
+  "episodes": [
+    {
+      "timestamp": "2025-11-28T21:11:19.192866",
+      "participants": [
+        "Ayan"
+      ],
+      "summary": "User asked: hello",
+      "key_facts": [
+        "[EMOTION: HAPPY] Hey Ayan, what's up?"
+      ]
+    }
+  ]
+}

@@ -4,7 +4,9 @@ import cv2
 import random
 import re
 from . import config
-from .memory import TextMemory, BiometricMemory
+# from .memory import TextMemory, BiometricMemory
+from .knowledge_graph import KnowledgeGraph, FactExtractor
+from .biometric_memory_v2 import OptimizedBiometricMemory
 from .tools import Toolbox
 
 import warnings
@@ -68,11 +70,16 @@ class GeminiBrain:
         self.model = genai.GenerativeModel(self.model_name, safety_settings=safety)
 
         # Load memories
-        self.text_mem = TextMemory()
-        self.bio_mem = BiometricMemory()
+        # self.text_mem = TextMemory()
+        # self.bio_mem = BiometricMemory()
 
         # Tools
         self.tools = Toolbox()
+
+        # New Memory System
+        self.knowledge_graph = KnowledgeGraph()
+        self.fact_extractor = FactExtractor(self.model)
+        self.bio_mem = OptimizedBiometricMemory()
 
         # Rolling chat history (6 turns)
         self.chat_history = []
@@ -156,6 +163,8 @@ class GeminiBrain:
         2. Do not include commands or noise (e.g., ignore "recognize my voice").
         3. If no clear fact, return "None".
         """
+
+        
         try:
             res = self.model.generate_content(prompt)
             text = res.text.strip()
@@ -169,22 +178,46 @@ class GeminiBrain:
     #  MAIN CHAT PROCESSOR
     # -------------------------------------------------------
     def process(self, cv2_img, prompt, detections, active_user_context, face_encoding, depth_dist, state, mode):
-        """
-        Generates a normal conversational response.
-        """
-
-        # 1. CHECK TOOLS FIRST (Fix for Spotify/Commands)
+        
+        # 1. CHECK TOOLS FIRST
         tool_result = ""
         if prompt:
-            # Try to open app or run command
             if self.tools.open_app(prompt):
-                tool_result = f"[SYSTEM ACTION: Successfully executed command based on user input: '{prompt}']"
+                tool_result = f"[SYSTEM ACTION: Successfully executed command: '{prompt}']"
             elif "search" in prompt.lower():
-                # Fallback to web search if explicit
                 search_res = self.tools.web_search(prompt)
                 tool_result = f"[SYSTEM SEARCH RESULT: {search_res}]"
 
-        # Convert CV2 to PIL
+        # 2. EXTRACT FACTS & UPDATE GRAPH (NEW)
+        # We need to identify the user name from the context string "People: Name (Active)"
+        current_user = "Unknown"
+        if "People:" in active_user_context:
+            try:
+                # Extracts "Parth" from "People: Parth (Active)"
+                current_user = active_user_context.split("People:")[1].split("(")[0].strip()
+            except:
+                pass
+
+        if prompt and current_user not in ["Unknown", "Off-Screen Speaker"]:
+            # Use the new FactExtractor
+            extracted_data = self.fact_extractor.extract_from_text(current_user, prompt)
+            
+            # Add to Graph
+            if extracted_data.get("entities"):
+                for entity in extracted_data["entities"]:
+                    self.knowledge_graph.add_entity(entity["id"], entity["type"], entity.get("properties", {}))
+            
+            if extracted_data.get("relationships"):
+                for rel in extracted_data["relationships"]:
+                    self.knowledge_graph.add_relationship(rel["from"], rel["to"], rel["type"], rel.get("strength", 0.8))
+
+        # 3. RETRIEVE CONTEXT FROM GRAPH (NEW)
+        user_profile = ""
+        if current_user != "Unknown":
+            # Query the graph instead of the old TextMemory
+            user_profile = self.knowledge_graph.query_context(current_user, context_type="recent")
+
+        # 4. PREPARE IMAGE
         pil_img = None
         if cv2_img is not None:
             try:
@@ -193,97 +226,66 @@ class GeminiBrain:
             except:
                 pass
 
-        # -------------------------------------------------------
-        # Assemble internal context
-        # -------------------------------------------------------
-        user_profile = ""
-        if "People:" in active_user_context:
-            # Clean up the context string to get raw names
-            # e.g. "People: Parth (happy)" -> ["Parth (happy)"]
-            names = active_user_context.replace("People:", "").strip().split("|")
-            for n in names:
-                # Extract name part before parenthesis
-                n = n.split("(")[0].strip()
-                if n != "Unknown":
-                    user_profile += self.text_mem.get_user_context(n) + "\n"
-        
+        # 5. ASSEMBLE PROMPT
         history_text = ""
         if self.chat_history:
             history_text = "RECENT CHAT HISTORY:\n" + "\n".join(self.chat_history) + "\n"
 
-        dist_msg = "Unknown distance"
-        if isinstance(depth_dist, int) and depth_dist < 9000:
-            dist_msg = f"{depth_dist/1000:.1f} meters"
-
-        # -------------------------------------------------------
-        # System Persona Prompt
-        # -------------------------------------------------------
         sys_prompt = f"""
-        You are E.D.I (Enhanced Digital Intelligence) ( Pronounced as Edie ) — a warm, expressive, witty, emotional AI companion.
-        Keep responses natural, and conversational.
-        Do NOT describe the environment, vision, objects, distance, or technical details unless the user explicitly asks.
+        You are E.D.I (Enhanced Digital Intelligence). A smart, witty, warm and emotional AI companion.
+        
+        --- IDENTITY & GROUNDING ---
+        1. WHO YOU ARE TALKING TO: The 'People Presence' below is the absolute truth. If it says 'Parth', you are talking to Parth.
+        2. MEMORY: Use the 'Memory' section to recall past details naturally. Don't announce "I have accessed your file." Just say "How's the coffee?"
+        
+        --- PERSONALITY RULES ---
+        1. BE HUMAN: Talk like a smart, witty friend. Be concise. No flowery language or long paragraphs.
+        2. BE OBSERVANT: You see the context, but don't list everything (e.g., don't say "I see you are wearing a shirt"). Only mention things if they are interesting or changed.
+        3. BE DIRECT: If the user says "hello", just say "Hey [Name], what's up?".
+        4. EMOTION: Start every response with a hidden tag like [EMOTION: HAPPY], [EMOTION: BORED], etc.
 
-        --- CRITICAL IDENTITY RULES ---
-        1. TRUST THE SENSORS: Check 'People Presence' below. If a name is listed (e.g., 'Parth'), THAT IS who you are talking to.
-        2. NO DENIALS: Never say "I don't recognize you" or "I don't have eyes" if a name is provided. You DO know them. Treat them as a recognized friend.
-        3. MEMORY: Use the 'USER PROFILE' section to reference facts you know about them naturally.
-
-        Start every message with one of these emotion tags:
-        [EMOTION: HAPPY]
-        [EMOTION: SURPRISED]
-        [EMOTION: SKEPTICAL]
-        [EMOTION: IDLE]
-        [EMOTION: HUMMING]
-        [EMOTION: THINKING]
-
-        Respond naturally, like a human friend.
-        Do NOT generate command tags like [LEARN_FACE].
-
-        --- ENVIRONMENT CONTEXT ---
-        Current State: {state}
-        Detected Objects: {detections}
-        Estimated Distance: {dist_msg}
-        People Presence: {active_user_context}  <-- LOOK HERE FOR NAME
-
-        --- TOOL OUTPUT ---
-        {tool_result}
-
-        --- USER PROFILE(S) ---
+        --- ENVIRONMENT ---
+        People Presence: {active_user_context}
+        Objects: {detections}
+        
+        --- MEMORY CONTEXT ---
         {user_profile}
 
-        --- CHAT HISTORY ---
+        --- TOOL RESULTS ---
+        {tool_result}
+
+        --- HISTORY ---
         {history_text}
 
-        Now respond to:
         User said: "{prompt}"
 
-        If the Tool Output indicates an action was taken, acknowledge it naturally.
+        Respond naturally.  
         """
 
-        # -------------------------------------------------------
-        # Generate Response
-        # -------------------------------------------------------
-        full_prompt = sys_prompt
-
+        # 6. GENERATE RESPONSE
         try:
             if pil_img:
-                out = self.model.generate_content([full_prompt, pil_img])
+                out = self.model.generate_content([sys_prompt, pil_img])
             else:
-                out = self.model.generate_content(full_prompt)
-
-            response_text = out.text if out.parts else "[EMOTION: IDLE] I'm not sure what to say."
-
+                out = self.model.generate_content(sys_prompt)
+            response_text = out.text if out.parts else "[EMOTION: IDLE] ..."
         except Exception as e:
             print(f"[BRAIN ERROR] {e}")
-            return "[EMOTION: CONFUSED] Something glitched."
+            return "[EMOTION: CONFUSED] Error processing."
 
-        # -------------------------------------------------------
-        # Update history (max 6 entries)
-        # -------------------------------------------------------
+        # 7. LOG EPISODE TO GRAPH (NEW)
+        if prompt and current_user != "Unknown":
+            self.knowledge_graph.add_episode(
+                participants=[current_user],
+                summary=f"User asked: {prompt}",
+                key_facts=[response_text[:100]] # Store snippet of AI response
+            )
+
+        # Update History
         if prompt:
             clean_history_line = response_text.replace("[", "").replace("]", "")
             self.chat_history.append(f"User: {prompt}")
-            self.chat_history.append(f"Friday: {clean_history_line}")
+            self.chat_history.append(f"EDI: {clean_history_line}")
             if len(self.chat_history) > 6:
                 self.chat_history = self.chat_history[-6:]
 

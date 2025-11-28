@@ -23,8 +23,8 @@ class VoiceAssistant:
         self.r = sr.Recognizer()
         
         # Tuning for ghost inputs
-        self.r.dynamic_energy_threshold = False
-        self.r.energy_threshold = 400
+        self.r.dynamic_energy_threshold = True
+        # self.r.energy_threshold = 400
         self.r.pause_threshold = 1.0
 
         self.m = sr.Microphone()
@@ -56,7 +56,16 @@ class VoiceAssistant:
 
     def speak(self, text):
         if self.is_speaking: self.stop()
-        clean_text = re.sub(r'[^\w\s,!.?\']', '', text).replace("FRIDAY", "Friday").strip()
+        
+        # --- NEW PRONUNCIATION LOGIC ---
+        # 1. Convert written acronym to phonetic name
+        text = text.replace("E.D.I", "Edie").replace("EDI", "Edie")
+        
+        # 2. If "Friday" slips in, replace it with "Edie" (or remove it)
+        text = text.replace("Friday", "Edie").replace("FRIDAY", "Edie")
+        
+        clean_text = re.sub(r'[^\w\s,!.?\']', '', text).strip()
+        
         if clean_text: self.q.put(clean_text)
 
     def stop(self):
@@ -114,12 +123,25 @@ class VoiceAssistant:
     def listen(self):
         with self.m as s:
             try:
+                print("[DEBUG] Listening for audio...")
+                # Reduce timeout slightly to make it snappier
                 audio = self.r.listen(s, timeout=5, phrase_time_limit=10)
+                
+                print("[DEBUG] Audio captured. Sending to Google...")
                 text = self.r.recognize_google(audio)
+                
+                print(f"[DEBUG] Google heard: '{text}'")
                 return text, audio
+            
             except sr.WaitTimeoutError:
+                print("[DEBUG] Error: Listening Timed Out (No speech detected)")
                 return None, None
             except sr.UnknownValueError:
+                print("[DEBUG] Error: Google could not understand audio (Unclear speech)")
                 return None, None
-            except Exception: 
+            except sr.RequestError as e:
+                print(f"[DEBUG] Error: Could not request results from Google; {e}")
+                return None, None
+            except Exception as e: 
+                print(f"[DEBUG] Critical Error in Listen: {e}")
                 return None, None

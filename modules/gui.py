@@ -42,7 +42,7 @@ class FridayUI:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((config.SCREEN_WIDTH, config.SCREEN_HEIGHT))
-        pygame.display.set_caption("FRIDAY Interface")
+        pygame.display.set_caption("EDI Interface")
         self.clock = pygame.time.Clock()
         
         # --- POSITIONS ---

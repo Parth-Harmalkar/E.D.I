@@ -28,6 +28,7 @@ from modules.gui import FridayUI
 from modules.memory import DM
 from modules.voice_auth import VoiceAuth
 from modules.vision import VisionSystem
+from modules.fusion_engine import MultiModalFusionEngine, ContextualReasoningEngine
 
 print = functools.partial(print, flush=True)
 
@@ -140,7 +141,7 @@ def run_onboarding_wizard(name, camera, voice, brain, gui, voice_auth):
         voice.speak(f"I have captured {captured_count} biometric reference points.")
 
     # --- VOICE CALIBRATION ---
-    phrase = "I authorize the Friday system to capture my biometric data."
+    phrase = "I authorize the EDI system to capture my biometric data."
     
     attempts = 0
     while attempts < 3:
@@ -160,8 +161,14 @@ def run_onboarding_wizard(name, camera, voice, brain, gui, voice_auth):
         else:
             voice.speak("I didn't hear anything clearly. Please speak louder.")
             time.sleep(1.0)
-            
-    brain.text_mem.ensure_user_exists(name)
+
+        
+    # FIXED: Use Knowledge Graph instead of text_mem
+    brain.knowledge_graph.add_entity(
+        entity_id=f"person_{name.lower().replace(' ', '_')}", 
+        entity_type="Person", 
+        properties={"name": name, "role": "admin"}
+    )
     gui.set_emotion("HAPPY")
     voice.speak(f"You are all set, {name}!")
 
@@ -190,138 +197,81 @@ def run_interaction(frame, detections, voice, brain, closest_depth, gui,
                     vision_system,
                     user_input=None, audio_data=None, mode="reactive",
                     voice_auth=None, my_id=0, 
-                    pre_context=None, pre_ids=None):
+                    pre_context=None, pre_ids=None,
+                    fusion=None, reasoning=None): # <--- Added new args
     
     global current_active_user, interaction_id
     if my_id != interaction_id or voice.is_speaking:
         return
 
-    # 1. SETUP DATA
-    raw_identities = pre_ids if pre_ids else []
-    rich_context = pre_context if pre_context else []
-    known_users_present = [p['name'] for p in rich_context if p['name'] != "Unknown"]
-    
-    # 2. VOICE AUTH
+    # --- 1. VOICE IDENTIFICATION ---
     voice_match_name = None
     voice_score = 0.0
     if audio_data:
         emb = voice_auth.get_embedding_from_data(audio_data)
-        match, score = voice_auth.compare_voices(brain.bio_mem.known_voice_embeddings,
-                                                 emb, threshold=0.60)
-        if match:
-            voice_match_name = match
-            voice_score = score
+        # Use the NEW bio memory identify_voice method if available, else fallback
+        if emb is not None:
+             match, score = brain.bio_mem.identify_voice(emb) # Assuming updated bio_mem has this
+             voice_match_name = match
+             voice_score = score
 
-    # 3. DETERMINE SPEAKER
-    primary_user = "Unknown"
-    speaker_found = False
+    # --- 2. MULTI-MODAL FUSION (NEW) ---
+    # Combine Vision (Face) + Audio (Voice) + Context
+    fusion_result = fusion.update(
+        face_detections=pre_ids,      # From Face Recognition
+        vision_context=pre_context,   # From Smart Vision (Lips moving?)
+        voice_match=voice_match_name, # From Voice Auth
+        voice_confidence=voice_score
+    )
 
-    for person in rich_context:
-        if person['is_talking']:
-            primary_user = person['name']
-            speaker_found = True
-            break
-            
-    if not speaker_found and voice_match_name and voice_match_name in known_users_present:
-        primary_user = voice_match_name
-        speaker_found = True
+    # --- 3. REASONING (DECIDE WHO IS SPEAKING) ---
+    primary_user, confidence = reasoning.infer_primary_user(
+        fusion_result, 
+        voice_match_name
+    )
 
-    if not speaker_found and voice_match_name and voice_score > 0.70:
-        primary_user = voice_match_name
-        speaker_found = True
-
-    if not speaker_found:
-        if len(rich_context) > 0:
-            primary_user = rich_context[0]['name']
-        else:
-            primary_user = "Off-Screen Speaker"
-
+    # Update global state
     current_active_user = primary_user
 
-    # 4. CONTEXT BUILDING
+    # Build Context String for Brain
     context_str = f"People: {primary_user} (Active)"
     if primary_user == "Off-Screen Speaker":
         context_str += " [Audio Only]"
-    for p in rich_context:
-        if p['name'] != primary_user:
-            context_str += f" | {p['name']} ({p['emotion']})"
+    
+    # Add other people in the background
+    for p in fusion_result["people"]:
+        if p['name'] != primary_user and p['name'] != "Unknown":
+            context_str += f" | {p['name']}"
 
-    # 5. REINFORCEMENT
-    if primary_user == voice_match_name and primary_user not in ["Unknown", "Off-Screen Speaker"]:
-        for raw in raw_identities:
+    # --- 4. REINFORCEMENT LEARNING (SMARTER) ---
+    # Only learn if high confidence (> 0.8)
+    if primary_user != "Unknown" and confidence > 0.8:
+        # Reinforce Face
+        for raw in pre_ids:
             if raw['name'] == primary_user:
                 brain.bio_mem.reinforce_face(primary_user, raw['encoding'])
                 break
+        
+        # Reinforce Voice
         if audio_data:
-            curr_emb = voice_auth.get_embedding_from_data(audio_data)
-            if curr_emb is not None:
-                brain.bio_mem.reinforce_voice(primary_user, curr_emb)
+            emb = voice_auth.get_embedding_from_data(audio_data)
+            if emb is not None:
+                # Boost quality if we are very sure
+                brain.bio_mem.reinforce_voice(primary_user, emb)
 
-    # =========================================================================
-    # 6. COMMANDS & ONBOARDING (BEFORE CHAT)
-    # =========================================================================
+    # --- 5. COMMANDS & ONBOARDING (Simplified) ---
     if user_input:
         clean_input = user_input.lower()
-        trigger_wizard = False
-        target_name = None
-
-        # A. REGEX NAME EXTRACTION
-        import re
-        name_match = re.search(r"(?:i am|i'm|name is|this is) ([a-zA-Z]+)", clean_input)
-        if name_match:
-            potential_name = name_match.group(1).capitalize()
-            if potential_name.lower() not in ["good", "sorry", "here", "ready",
-                                              "friday", "happy", "fine"]:
-                target_name = potential_name
-
-        # B. BRAIN NAME EXTRACTION
-        if not target_name:
-            extracted = brain.extract_name(user_input)
-            if extracted and extracted.lower() not in ["friday", "ai"]:
-                target_name = extracted.strip()
-
-        # CASE 1: Recalibrate
-        if "recalibrate" in clean_input or "retrain" in clean_input or "reset voice" in clean_input:
-            if target_name:
-                voice.speak(f"Understood. Starting full factory reset for {target_name}.")
-                trigger_wizard = True
-            elif current_active_user not in ["Unknown", "Off-Screen Speaker"]:
-                target_name = current_active_user
-                voice.speak(f"Understood. Retraining profile for {target_name}.")
-                trigger_wizard = True
-            else:
-                voice.speak("I need to know who you are first. Say 'Recalibrate [Name]'.")
-                return
-
-        # CASE 2: Register
-        elif "register" in clean_input or "scan me" in clean_input:
-            if target_name:
-                trigger_wizard = True
-            else:
-                voice.speak("Who am I registering? Please say 'I am [Name]'.")
-                return
-
-        # CASE 3: "I am X"
-        elif target_name:
-            is_known = (target_name in brain.bio_mem.known_face_names)
-            
-            if not is_known:
-                print(f"[SOCIAL] New User Detected: {target_name}")
-                trigger_wizard = True
-            
-            elif current_active_user == "Unknown":
-                print(f"[SOCIAL] Correction: User identified as {target_name}")
-                voice.speak(f"Oh, I see you now, {target_name}.")
-                current_active_user = target_name
-                primary_user = target_name
-
-        if trigger_wizard and target_name:
-            onboarding_queue.append(target_name)
+        
+        # Check for recalibrate/register triggers
+        if "register" in clean_input or "scan me" in clean_input:
+            onboarding_queue.append(primary_user if primary_user != "Unknown" else "New User")
             return
 
-    # 7. NORMAL CHAT RESPONSE
+    # --- 6. SEND TO BRAIN ---
     if user_input:
-        print(f"\n[USER] {user_input} (Context: {context_str})")
+        print(f"\n[USER] {user_input} (User: {primary_user} | Conf: {confidence:.2f})")
+    
     gui.set_emotion("THINKING")
     
     response = brain.process(frame, user_input, detections,
@@ -331,6 +281,8 @@ def run_interaction(frame, detections, voice, brain, closest_depth, gui,
     if my_id != interaction_id:
         return
     
+    # Extract Emotion Tag
+    import re
     emo_match = re.search(r"\[EMOTION: (\w+)\]", response)
     if emo_match:
         emo = emo_match.group(1)
@@ -339,8 +291,10 @@ def run_interaction(frame, detections, voice, brain, closest_depth, gui,
         response = response.replace(f"[EMOTION: {emo}]", "").strip()
 
     cleaned = response.strip()
-    print(f"[FRIDAY] {cleaned}")
+    print(f"[EDI] {cleaned}")
     voice.speak(cleaned)
+
+    
 # --------------------------------------------------------------
 # AI AMBIENT DECISION MAKER (Smart Persona)
 # --------------------------------------------------------------
@@ -402,11 +356,14 @@ def main():
         voice_auth = VoiceAuth()
         vision = VisionSystem()
 
+        fusion = MultiModalFusionEngine()
+        reasoning = ContextualReasoningEngine()
+
     except Exception as e:
         print(f"[CRITICAL ERROR] Startup failed: {e}")
         sys.exit(1)
 
-    print("\n[SYSTEM] FRIDAY 2.7 — GPU YOLO EDITION\n")
+    print("\n[SYSTEM] E.D.I — GPU YOLO EDITION\n")
 
     frame_count = 0
     latest_detections = []
@@ -443,6 +400,35 @@ def main():
         if not running:
             break
 
+        # --- ADD THIS BLOCK: CHECK FOR REGISTRATION REQUESTS ---
+        if onboarding_queue:
+            # Get the name (default to "User" if unknown)
+            new_user_name = "User"
+            if len(onboarding_queue) > 0:
+                 # If we already have a name guess, use it, otherwise ask
+                 candidate = onboarding_queue.pop(0)
+                 new_user_name = candidate if candidate != "Unknown" else "User"
+            
+            # Pause other threads
+            voice.stop()
+            
+            # Start the Wizard (Input name manually or use default)
+            print(f"\n[SYSTEM] Starting Onboarding for {new_user_name}...")
+            
+            # Optional: Ask for name via console if it's generic
+            if new_user_name in ["User", "New User", "Unknown"]:
+                voice.speak("I need to know your name first. Please type it in the console.")
+                # Clear buffer so window doesn't freeze
+                cv2.destroyAllWindows() 
+                new_user_name = input("\n[SYSTEM] Enter Name for new user: ")
+            
+            # Run the wizard function (already defined in your file)
+            run_onboarding_wizard(new_user_name, camera, voice, brain, gui, voice_auth)
+            
+            # Reset buffers
+            latest_detections = []
+            continue
+
         # DRAW DEBUG HUD
         draw_debug_hud(frame, raw_dets, None, latest_vision_context)
 
@@ -467,7 +453,7 @@ def main():
                           latest_closest, gui, vision,
                           user_text, user_audio,
                           "reactive", voice_auth, interaction_id,
-                          latest_vision_context, latest_raw_ids),
+                          latest_vision_context, latest_raw_ids, fusion, reasoning),
                     daemon=True
                 ).start()
             else:
