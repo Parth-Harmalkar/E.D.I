@@ -402,30 +402,18 @@ def main():
 
         # --- ADD THIS BLOCK: CHECK FOR REGISTRATION REQUESTS ---
         if onboarding_queue:
-            # Get the name (default to "User" if unknown)
-            new_user_name = "User"
-            if len(onboarding_queue) > 0:
-                 # If we already have a name guess, use it, otherwise ask
-                 candidate = onboarding_queue.pop(0)
-                 new_user_name = candidate if candidate != "Unknown" else "User"
+            candidate = onboarding_queue.pop(0)
+            new_user_name = candidate if candidate != "Unknown" else "User"
             
-            # Pause other threads
             voice.stop()
-            
-            # Start the Wizard (Input name manually or use default)
-            print(f"\n[SYSTEM] Starting Onboarding for {new_user_name}...")
-            
-            # Optional: Ask for name via console if it's generic
-            if new_user_name in ["User", "New User", "Unknown"]:
+            if new_user_name == "User":
                 voice.speak("I need to know your name first. Please type it in the console.")
-                # Clear buffer so window doesn't freeze
-                cv2.destroyAllWindows() 
                 new_user_name = input("\n[SYSTEM] Enter Name for new user: ")
             
-            # Run the wizard function (already defined in your file)
+            # Re-run the wizard logic
             run_onboarding_wizard(new_user_name, camera, voice, brain, gui, voice_auth)
             
-            # Reset buffers
+            # Reset detection buffers to prevent crashes
             latest_detections = []
             continue
 
