@@ -1,9 +1,9 @@
-# 🤖 E.D.I. — Enhanced Digital Intelligence  
-### Social Vision Edition v2.0
+# 🤖 E.D.I. — Enhanced Digital Intelligence
+## Social Vision Edition v2.0
 
-E.D.I. (pronounced **Edie**) is a local-first, multi-modal social AI assistant that combines **computer vision**, **speaker recognition**, and a **persistent relational memory system**.
+E.D.I. (pronounced **Edie**) is a local-first, multi-modal social AI assistant that combines computer vision, speaker recognition, and a persistent relational memory system.
 
-This project is not just a runtime application — it **builds a personal AI database over time**, storing biometric encodings and long-term knowledge locally on disk.
+This project is not just a runtime application — it builds a personal AI database over time, storing biometric encodings and long-term knowledge locally on disk.
 
 ---
 
@@ -29,21 +29,15 @@ Understanding this layout is essential for backups, migrations, and privacy.
 data/
 ├── faces/
 │   └── face_clusters.json
-│
 ├── voice/
 │   └── voice_clusters.json
-│
 ├── memory/
 │   └── knowledge_graph.json
-│
 └── temp/
-
-
 🧍 data/faces/face_clusters.json
+Biometric Face Database
 
-Biometric face database
-
-Stores numerical face encodings, not images
+Stores numerical face encodings (no raw images)
 
 Each person has a cluster of vectors captured from:
 
@@ -57,15 +51,14 @@ Up
 
 Down
 
-Includes quality/confidence scores to prevent learning blurry frames
+Tracks quality and confidence scores to prevent learning blurry frames
 
 Used for long-term identity recognition
 
 🎤 data/voice/voice_clusters.json
+Speaker Recognition Database
 
-Speaker recognition database
-
-Stores 256-dimension voice embeddings
+Stores 256-dimensional voice embeddings
 
 Generated during vocal authorization
 
@@ -74,16 +67,15 @@ Allows identity recognition even when the user is off-camera
 Used by the VoiceAuth module
 
 🧠 data/memory/knowledge_graph.json
+Persistent Relational Memory (Edie’s “Soul”)
 
-Persistent relational memory (Edie’s “soul”)
-
-Neo4j-style graph stored as JSON
+Neo4j-style relational graph stored as JSON
 
 Stores:
 
-Facts: Parth → LIKES → Coffee
+Facts (e.g., Parth → LIKES → Coffee)
 
-Relationships: User → WORKS_ON → Project
+Relationships (e.g., User → WORKS_ON → Project)
 
 Episodic summaries of past interactions
 
@@ -92,14 +84,13 @@ Enables long-term personalization across sessions
 ⚠️ Deleting this file resets Edie’s personality and memory.
 
 🧪 data/temp/
-
-Temporary runtime storage
+Temporary Runtime Storage
 
 Used for:
 
-Generated .wav files (TTS)
+Generated .wav files (Text-to-Speech)
 
-Short-lived intermediate data
+Short-lived intermediate runtime data
 
 Automatically cleared by the system
 
@@ -107,15 +98,13 @@ Safe to delete at any time
 
 🛠️ System Requirements
 Hardware
-
 NVIDIA GPU (recommended for YOLOv8)
 
 CUDA-compatible drivers
 
-Webcam + microphone
+Webcam and microphone
 
 Software
-
 Python 3.10
 
 Conda (recommended)
@@ -123,10 +112,7 @@ Conda (recommended)
 NVIDIA drivers + CUDA toolkit
 
 📦 requirements.txt (Version-Pinned)
-
 Due to compatibility issues between MediaPipe and NumPy 2.x, strict version pinning is required.
-
-Ensure your requirements.txt contains at least the following:
 
 numpy==1.26.4
 mediapipe==0.10.11
@@ -136,63 +122,52 @@ ultralytics
 google-generativeai
 resemblyzer
 face-recognition
+⚠️ Installing NumPy 2.x will crash MediaPipe.
 
 🚀 Installation & Setup
 1️⃣ Clone the Repository
 git clone https://github.com/yourusername/EDI.git
 cd EDI
-
 2️⃣ Create Conda Environment
 conda create -n ai_lab python=3.10
 conda activate ai_lab
-
 3️⃣ Install Dependencies
 pip install -r requirements.txt
-
 4️⃣ Hardware Check
-
-Ensure NVIDIA drivers are installed
-
-Verify CUDA is available:
+Ensure NVIDIA drivers are installed and CUDA is available:
 
 nvidia-smi
-
 5️⃣ Run E.D.I.
 python main.py
-
 🎮 First-Run Onboarding
-
-On detecting a new person, E.D.I. initiates identity calibration:
+When E.D.I. detects a new person, it initiates identity calibration.
 
 Face Scan
-
-Captures 5 head orientations
+Captures five head orientations
 
 Builds a face encoding cluster
 
 Voice Authorization
-
 Records a short authorization phrase
 
-Generates a 256-D speaker embedding
+Generates a 256-dimensional speaker embedding
 
-Knowledge Graph Node Creation
+Knowledge Graph Initialization
+Creates a persistent identity node
 
-Identity is added to persistent memory
+Links future memories and preferences
 
 🔒 Privacy & Security Notice
+This project stores biometric data locally on disk.
 
-This project stores biometric data locally.
-
-IMPORTANT:
-
-If you plan to publish your fork or repository:
+IMPORTANT
+If you plan to publish your fork or make the repository public:
 
 DO NOT commit the data/ directory
 
 DO NOT commit .env files
 
-Your face, voice, and memory data should remain private.
+Your face data, voice data, and memory graph should remain private.
 
 🛡️ Recommended .gitignore
 # Virtual environments
@@ -210,8 +185,7 @@ __pycache__/
 # OS files
 .DS_Store
 Thumbs.db
-
 🧩 Project Philosophy
-
 E.D.I. is designed as a stateful, embodied AI system, not a stateless chatbot.
 Its intelligence emerges over time through perception, memory, and interaction.
+
