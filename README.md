@@ -34,7 +34,10 @@ data/
 ├── memory/
 │   └── knowledge_graph.json
 └── temp/
-🧍 data/faces/face_clusters.json
+```
+
+
+## 🧍 data/faces/face_clusters.json
 Biometric Face Database
 
 Stores numerical face encodings (no raw images)
@@ -55,7 +58,7 @@ Tracks quality and confidence scores to prevent learning blurry frames
 
 Used for long-term identity recognition
 
-🎤 data/voice/voice_clusters.json
+## 🎤 data/voice/voice_clusters.json
 Speaker Recognition Database
 
 Stores 256-dimensional voice embeddings
@@ -66,16 +69,16 @@ Allows identity recognition even when the user is off-camera
 
 Used by the VoiceAuth module
 
-🧠 data/memory/knowledge_graph.json
+## 🧠 data/memory/knowledge_graph.json
 Persistent Relational Memory (Edie’s “Soul”)
 
 Neo4j-style relational graph stored as JSON
 
 Stores:
 
-Facts (e.g., Parth → LIKES → Coffee)
+Facts (e.g., `Parth → LIKES → Coffee`)
 
-Relationships (e.g., User → WORKS_ON → Project)
+Relationships (e.g., `User → WORKS_ON → Project`)
 
 Episodic summaries of past interactions
 
@@ -83,12 +86,12 @@ Enables long-term personalization across sessions
 
 ⚠️ Deleting this file resets Edie’s personality and memory.
 
-🧪 data/temp/
+## 🧪 data/temp/
 Temporary Runtime Storage
 
 Used for:
 
-Generated .wav files (Text-to-Speech)
+Generated `.wav` files (Text-to-Speech)
 
 Short-lived intermediate runtime data
 
@@ -113,7 +116,7 @@ NVIDIA drivers + CUDA toolkit
 
 📦 requirements.txt (Version-Pinned)
 Due to compatibility issues between MediaPipe and NumPy 2.x, strict version pinning is required.
-
+```
 numpy==1.26.4
 mediapipe==0.10.11
 opencv-python==4.8.0.74
@@ -122,54 +125,64 @@ ultralytics
 google-generativeai
 resemblyzer
 face-recognition
+```
 ⚠️ Installing NumPy 2.x will crash MediaPipe.
 
-🚀 Installation & Setup
+## 🚀 Installation & Setup
 1️⃣ Clone the Repository
+```
 git clone https://github.com/yourusername/EDI.git
 cd EDI
+```
 2️⃣ Create Conda Environment
+```
 conda create -n ai_lab python=3.10
 conda activate ai_lab
+```
 3️⃣ Install Dependencies
+```
 pip install -r requirements.txt
+```
 4️⃣ Hardware Check
 Ensure NVIDIA drivers are installed and CUDA is available:
-
+```
 nvidia-smi
+```
 5️⃣ Run E.D.I.
+```
 python main.py
+```
 🎮 First-Run Onboarding
 When E.D.I. detects a new person, it initiates identity calibration.
 
-Face Scan
+## Face Scan
 Captures five head orientations
 
 Builds a face encoding cluster
 
-Voice Authorization
+## Voice Authorization
 Records a short authorization phrase
 
 Generates a 256-dimensional speaker embedding
 
-Knowledge Graph Initialization
+## Knowledge Graph Initialization
 Creates a persistent identity node
 
 Links future memories and preferences
 
-🔒 Privacy & Security Notice
+## 🔒 Privacy & Security Notice
 This project stores biometric data locally on disk.
 
-IMPORTANT
+## IMPORTANT
 If you plan to publish your fork or make the repository public:
 
-DO NOT commit the data/ directory
+DO NOT commit the `data/` directory
 
-DO NOT commit .env files
+DO NOT commit `.env` files
 
 Your face data, voice data, and memory graph should remain private.
 
-🛡️ Recommended .gitignore
+## 🛡️ Recommended .gitignore
 # Virtual environments
 .env
 .venv
