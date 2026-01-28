@@ -43,13 +43,21 @@ Identity Birth: Creates your unique node in the Knowledge Graph for persistent r
 📂 Data Topology
 YAML
 data/
+
   ├── faces/
+  
   │   └── face_clusters.json    # Mathematical face maps (Not raw photos)
+  
   ├── voice/
+  
   │   └── voice_clusters.json   # Speaker embeddings (Vocal fingerprints)
+  
   ├── memory/
+  
   │   └── knowledge_graph.json  # Edie's "Soul" (Facts & Relationships)
+  
   └── temp/                     # Managed scratchpad for TTS generation
+  
 🔒 Privacy & Security
 No Cloud Biometrics: All face and voice data are stored locally on your machine.
 
